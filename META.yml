@@ -1,0 +1,19 @@
+--- 
+abstract: ACID transactions on a directory tree
+author: 
+  - Yuval Kogman <nothingmuch@woobling.org>
+generated_by: Dist::Zilla::Plugin::MetaYaml version 1.003
+license: mit
+name: Directory-Transactional
+requires: 
+  Data::Stream::Bulk: 0
+  Data::UUID::LibUUID: 0
+  Directory::Scratch: 0
+  File::NFSLock: 0
+  File::Path: 2.07
+  Mouse: 0.14
+  Path::Class: 0
+  Test::TempDir: 0
+  Test::use::ok: 0
+  namespace::clean: 0
+version: 0.01
