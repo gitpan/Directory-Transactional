@@ -2,7 +2,7 @@
 # ABSTRACT: ACID transactions on a directory tree
 
 package Directory::Transactional;
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Squirrel;
 
@@ -116,7 +116,11 @@ sub _get_flock {
 
 	sub is_shared { 0 }
 	sub upgrade { }
-	sub downgrade { flock($_[0], LOCK_SH) or die $! }
+	sub downgrade {
+		my $self = shift;
+		flock($self, LOCK_SH) or die $!;
+		bless $self, "Directory::Transactional::Lock::Shared";
+	}
 
 	package Directory::Transactional::Lock::Shared;
 	use Fcntl qw(LOCK_EX);
@@ -124,7 +128,11 @@ sub _get_flock {
 	BEGIN { our @ISA = qw(Directory::Transactional::Lock) }
 
 	sub is_shared { 1 }
-	sub upgrade { flock($_[0], LOCK_EX) or die $! }
+	sub upgrade {
+		my $self = shift;
+		flock($self, LOCK_EX) or die $!;
+		bless($self, "Directory::Transactional::Lock::Exclusive");
+	}
 	sub downgrade { }
 }
 
@@ -288,6 +296,59 @@ sub merge_overlay {
 				CORE::unlink $targ or die $!;
 			}
 		}
+	}
+}
+
+sub txn_do {
+	my ( $self, $coderef, %args ) = @_;
+
+	my @args = @{ $args{args} || [] };
+
+	my ( $commit, $rollback ) = @args{qw(commit rollback)};
+
+	ref $coderef eq 'CODE' or croak '$coderef must be a CODE reference';
+
+	$self->txn_begin;
+
+	my @result;
+
+	my $wantarray = wantarray; # gotta capture, eval { } has its own
+
+	my ( $success, $err ) = do {
+		local $@;
+
+		my $success = eval {
+			if ( $wantarray ) {
+				@result = $coderef->(@args);
+			} elsif( defined $wantarray ) {
+				$result[0] = $coderef->(@args);
+			} else {
+				$coderef->(@args);
+			}
+
+			$commit && $commit->();
+			$self->txn_commit;
+
+			1;
+		};
+
+		( $success, $@ );
+	};
+
+	if ( $success ) {
+		return wantarray ? @result : $result[0];
+	} else {
+		my $rollback_exception = do {
+			local $@;
+			eval { $self->txn_rollback; $rollback && $rollback->() };
+			$@;
+		};
+
+		if ($rollback_exception) {
+			croak "Transaction aborted: $err, rollback failed: $rollback_exception";
+		}
+
+		die $err;
 	}
 }
 
@@ -619,6 +680,7 @@ sub _readdir_from_overlay {
 	unless ( defined $path ) {
 		$files->remove(".txn_work_dir");
 		$files->remove(".txn_work_dir.lock");
+		$files->remove(".txn_work_dir.lock.NFSLock") if $self->nfs;
 	}
 
 	return $files;
@@ -695,7 +757,17 @@ sub vivify_path {
 
 		my $src = $self->_locate_file_in_overlays($path);
 
-		copy( $src, $txn_path ) or die "copy($src, $txn_path): $!";
+		if ( my $stat = File::stat::stat($src) ) {
+			if ( -l $src ) {
+				croak "The file $src is a symbolic link.";
+			}
+
+			if ( $stat->nlink > 1 ) {
+				croak "the file $src has a link count of more than one.";
+			}
+
+			copy( $src, $txn_path ) or die "copy($src, $txn_path): $!";
+		}
 	}
 
 	return $txn_path;
@@ -740,7 +812,7 @@ __END__
 
 =head1 VERSION
 
-version 0.01
+version 0.02
 Directory::Transactional - ACID transactions on a set of files with
 journalling/recovery using C<flock> or L<File::NFSLock>
 
@@ -750,9 +822,13 @@ journalling/recovery using C<flock> or L<File::NFSLock>
 
 	my $d = Directory::Transactional->new( root => $path );
 
-	$d->txn_begin;
+	$d->txn_do(sub {
+		my $fh = $d->openw("path/to/file");
 
-	$d->txn_commit;
+		$fh->print("I AR MODIFY");
+
+		close $fh;
+	});
 
 =head1 DESCRIPTION
 
