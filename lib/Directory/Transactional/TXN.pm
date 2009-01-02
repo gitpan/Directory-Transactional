@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::TXN;
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Squirrel;
 
@@ -24,9 +24,16 @@ has id => (
 	lazy_build => 1,
 );
 
-use Data::UUID::LibUUID (
-	new_dce_uuid_string => { -as => "_build_id" },
-);
+BEGIN {
+	local $@;
+	if ( eval { require Data::UUID::LibUUID } ) {
+		Data::UUID::LibUUID->import( new_dce_uuid_string => { -as => "_build_id" } );
+	} else {
+		require Data::UUID;
+		my $u = Data::UUID->new;
+		*_build_id = sub { $u->create_str };
+	}
+}
 
 has work => (
 	isa => "Str",
@@ -111,6 +118,8 @@ sub mark_changed {
 	$self->clear_all_changed;
 	$self->changed->insert(@args);
 }
+
+sub auto_handle {}
 
 __PACKAGE__->meta->make_immutable;
 

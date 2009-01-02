@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::TXN::Nested;
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Squirrel;
 

@@ -7,14 +7,17 @@ license: mit
 name: Directory-Transactional
 requires: 
   Data::Stream::Bulk: 0
-  Data::UUID::LibUUID: 0
+  Data::UUID: 0
   Directory::Scratch: 0
   File::NFSLock: 0
   File::Path: 2.07
+  Hash::Util::FieldHash::Compat: 0
   Mouse: 0.14
   Path::Class: 0
+  Scope::Guard: 0
   Set::Object: 0
+  Test::Exception: 0
   Test::TempDir: 0
   Test::use::ok: 0
   namespace::clean: 0
-version: 0.02
+version: 0.03

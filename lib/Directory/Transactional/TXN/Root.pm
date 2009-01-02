@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::TXN::Root;
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Squirrel;
 
@@ -15,6 +15,11 @@ extends qw(Directory::Transactional::TXN);
 # optional lock attr, used in NFS mode when no fine grained locking is
 # available
 has global_lock => (
+	is  => "ro",
+);
+
+# used for auto commit
+has auto_handle => (
 	is  => "ro",
 );
 
@@ -40,6 +45,15 @@ sub clear_all_changed {}
 
 sub all_changed {
 	shift->changed;
+}
+
+sub DEMOLISH {
+	my $self = shift;
+
+	if ( my $ah = $self->auto_handle ) {
+		# in case of rollback
+		$ah->finished(1);
+	}
 }
 
 __PACKAGE__->meta->make_immutable;

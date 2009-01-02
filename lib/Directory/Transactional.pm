@@ -2,7 +2,7 @@
 # ABSTRACT: ACID transactions on a directory tree
 
 package Directory::Transactional;
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Squirrel;
 
@@ -51,6 +51,12 @@ has global_lock => (
 	is  => "ro",
 	lazy => 1,
 	default => sub { shift->nfs },
+);
+
+has auto_commit => (
+	isa => "Bool",
+	is  => "ro",
+	default => 1,
 );
 
 sub _get_lock {
@@ -108,14 +114,18 @@ sub _get_flock {
 	package Directory::Transactional::Lock;
 
 	sub unlock { close $_[0] }
+	sub is_exclusive { 0 }
+	sub is_shared { 0 }
+	sub upgrade { }
+	sub downgrade { }
 
 	package Directory::Transactional::Lock::Exclusive;
 	use Fcntl qw(LOCK_SH);
 
 	BEGIN { our @ISA = qw(Directory::Transactional::Lock) }
 
-	sub is_shared { 0 }
-	sub upgrade { }
+	sub is_exclusive { 1 }
+
 	sub downgrade {
 		my $self = shift;
 		flock($self, LOCK_SH) or die $!;
@@ -133,7 +143,7 @@ sub _get_flock {
 		flock($self, LOCK_EX) or die $!;
 		bless($self, "Directory::Transactional::Lock::Exclusive");
 	}
-	sub downgrade { }
+
 }
 
 # this is the current active TXN (head of transaction stack)
@@ -143,13 +153,12 @@ has _txn => (
 	clearer => "_clear_txn",
 );
 
-has [qw(_txn_lock_file _shared_lock_file)] => (
+has _shared_lock_file => (
 	isa => "Str",
 	is  => "ro",
 	lazy_build => 1,
 );
 
-sub _build__txn_lock_file { File::Spec->catfile(shift->_work, "txn_lock") }
 sub _build__shared_lock_file { shift->_work . ".lock" }
 
 has _shared_lock => (
@@ -206,7 +215,6 @@ sub DEMOLISH {
 		rmdir $self->_work;
 		rmdir $self->_txns;
 		rmdir $self->_backups;
-		CORE::unlink $self->_txn_lock_file;
 
 		rmdir $self->_work;
 
@@ -300,13 +308,17 @@ sub merge_overlay {
 }
 
 sub txn_do {
-	my ( $self, $coderef, %args ) = @_;
+	my ( $self, @args ) = @_;
 
-	my @args = @{ $args{args} || [] };
+	unshift @args, "body" if @args % 2;
 
-	my ( $commit, $rollback ) = @args{qw(commit rollback)};
+	my %args = @args;
+
+	my ( $coderef, $commit, $rollback, $code_args ) = @args{qw(body commit rollback args)};
 
 	ref $coderef eq 'CODE' or croak '$coderef must be a CODE reference';
+
+	$code_args ||= [];
 
 	$self->txn_begin;
 
@@ -319,11 +331,11 @@ sub txn_do {
 
 		my $success = eval {
 			if ( $wantarray ) {
-				@result = $coderef->(@args);
+				@result = $coderef->(@$code_args);
 			} elsif( defined $wantarray ) {
-				$result[0] = $coderef->(@args);
+				$result[0] = $coderef->(@$code_args);
 			} else {
-				$coderef->(@args);
+				$coderef->(@$code_args);
 			}
 
 			$commit && $commit->();
@@ -353,12 +365,15 @@ sub txn_do {
 }
 
 sub txn_begin {
-	my $self = shift;
+	my ( $self, @args ) = @_;
 
 	my $txn;
 
 	if ( my $p = $self->_txn ) {
 		# this is a child transaction
+
+		croak "Can't txn_begin if an auto transaction is still alive" if $p->auto_handle;
+
 		$txn = Directory::Transactional::TXN::Nested->new(
 			parent  => $p,
 			manager => $self,
@@ -366,8 +381,13 @@ sub txn_begin {
 	} else {
 		# this is a top level transaction
 		$txn = Directory::Transactional::TXN::Root->new(
+			@args,
 			manager => $self,
-			( $self->global_lock ? ( global_lock => $self->_get_lock( $self->_txn_lock_file, LOCK_EX ) ) : () ),
+			( $self->global_lock ? (
+				# when global_lock is set, take an exclusive lock on the root dir
+				# non global lockers take a shared lock on it
+				global_lock => $self->_get_flock( File::Spec->catfile( $self->_locks, ".lock" ), LOCK_EX)
+			) : () ),
 		);
 	}
 
@@ -379,7 +399,7 @@ sub txn_begin {
 sub _pop_txn {
 	my $self = shift;
 
-	my $txn = $self->_txn;
+	my $txn = $self->_txn or croak "No active transaction";
 
 	if ( $txn->isa("Directory::Transactional::TXN::Nested") ) {
 		$self->_txn( $txn->parent );
@@ -440,56 +460,63 @@ sub txn_rollback {
 	return;
 }
 
-# lock a path for reading
-sub lock_path_read {
-	my ( $self, $path, $skip_parent ) = @_;
+sub _auto_txn {
+	my $self = shift;
 
-	return if $self->global_lock;
+	return if $self->_txn;
 
-	my $txn = $self->_txn or return;
+	croak "Auto commit is disabled" unless $self->auto_commit;
 
-	# create a list of ancestor directories
-	my @paths;
+	require Scope::Guard;
 
-	unless ( $skip_parent ) {
-		my @dirs = File::Spec->splitdir($path);
-		pop @dirs;
+	$self->txn_begin;
 
-		if ( @dirs ) {
-			for ( my $next = shift @dirs; @dirs; $next = File::Spec->catdir($next, shift @dirs) ) {
-				push @paths, $next;
-			}
-		}
-	}
+	return Scope::Guard->new(sub { $self->txn_commit });
+}
 
-	foreach my $path ( @paths, $path ) {
-		# any type of lock in this or any parent transaction is going to be good enough
-		unless ( $txn->find_lock($path) ) {
-			$txn->set_lock( $path, $self->_get_flock( File::Spec->catfile( $self->_locks, $path . ".lock" ), LOCK_SH) );
-		}
+sub _resource_auto_txn {
+	my $self = shift;
+
+	if ( my $txn = $self->_txn ) {
+		# return the same handle so that more resources can be registered
+		return $txn->auto_handle;
+	} else {
+		croak "Auto commit is disabled" unless $self->auto_commit;
+
+		require Directory::Transactional::AutoCommit;
+		
+		my $h = Directory::Transactional::AutoCommit->new( manager => $self );
+
+		$self->txn_begin( auto_handle => $h );
+
+		return $h;
 	}
 }
 
-sub lock_path_write {
-	my ( $self, $path, $skip_parent ) = @_;
+sub _lock_path_read {
+	my ( $self, $path ) = @_;
 
-	return if $self->global_lock;
+	my $txn = $self->_txn;
 
-	my $txn = $self->_txn or croak("Can't lock file for writing without an active transaction");
-
-	# lock the ancestor directories for reading
-	unless ( $skip_parent ) {
-		my ( undef, $dir ) = File::Spec->splitpath($path);
-		$self->lock_path_read($dir) if $dir;
+	if ( my $lock = $txn->find_lock($path) ) {
+		return $lock;
+	} else {
+		my $lock = $self->_get_flock( File::Spec->catfile( $self->_locks, $path . ".lock" ), LOCK_SH);
+		$txn->set_lock( $path, $lock );
 	}
+}
+
+sub _lock_path_write {
+	my ( $self, $path ) = @_;
+
+	my $txn = $self->_txn;
 
 	if ( my $lock = $txn->get_lock($path) ) {
 		# simplest scenario, we already have a lock in this transaction
 		$lock->upgrade; # upgrade it if necessary
-
 	} elsif ( my $inherited_lock = $txn->find_lock($path) ) {
 		# a parent transaction has a lock
-		if ( $inherited_lock->is_shared ) {
+		unless ( $inherited_lock->is_exclusive ) {
 			# upgrade it, and mark for downgrade on rollback
 			$inherited_lock->upgrade;
 			push @{ $txn->downgrade }, $inherited_lock;
@@ -497,8 +524,70 @@ sub lock_path_write {
 		$txn->set_lock( $path, $inherited_lock );
 	} else {
 		# otherwise create a new lock
-		$txn->set_lock( $path, $self->_get_flock( File::Spec->catfile( $self->_locks, $path . ".lock" ), LOCK_EX) );
+		my $lock = $self->_get_flock( File::Spec->catfile( $self->_locks, $path . ".lock" ), LOCK_EX);
+		$txn->set_lock( $path, $lock );
 	}
+}
+
+sub _lock_parent {
+	my ( $self, $path ) = @_;
+
+	my ( undef, $dir ) = File::Spec->splitpath($path);
+
+	my @dirs = File::Spec->splitdir($dir);
+
+	{
+		no warnings 'uninitialized';
+		pop @dirs unless length $dirs[-1]; # trailing slash
+	}
+	pop @dirs if $dir eq $path;
+
+	my $parent = "";
+
+	do {
+		$self->_lock_path_read($parent);
+	} while (
+		@dirs
+			and
+		$parent = length($parent)
+			? File::Spec->catdir($parent, shift @dirs)
+			: shift @dirs
+	);
+
+	return;
+}
+
+# lock a path for reading
+sub lock_path_read {
+	my ( $self, $path ) = @_;
+
+	unless ( $self->_txn ) {
+		croak("Can't lock file for reading without an active transaction");
+	}
+
+	return if $self->global_lock;
+
+	$self->_lock_parent($path);
+
+	$self->_lock_path_read($path);
+
+	return;
+}
+
+sub lock_path_write {
+	my ( $self, $path ) = @_;
+
+	unless ( $self->_txn ) {
+		croak("Can't lock file for writing without an active transaction");
+	}
+
+	return if $self->global_lock;
+
+	$self->_lock_parent($path);
+
+	$self->_lock_path_write($path);
+
+	return;
 }
 
 sub _txn_stack {
@@ -599,7 +688,7 @@ sub unlink {
 
 	# lock parent for writing
 	my ( undef, $dir ) = File::Spec->splitpath($path);
-	$self->lock_path_write($dir) if $dir;
+	$self->lock_path_write($dir);
 
 	my $txn_file = $self->_work_path($path);
 
@@ -613,10 +702,12 @@ sub unlink {
 sub rename {
 	my ( $self, $from, $to ) = @_;
 
+	my $t = $self->_auto_txn;
+
 	foreach my $path ( $from, $to ) {
 		# lock parents for writing
 		my ( undef, $dir ) = File::Spec->splitpath($path);
-		$self->lock_path_write($dir) if $dir;
+		$self->lock_path_write($dir);
 	}
 
 	$self->vivify_path($from),
@@ -630,17 +721,39 @@ sub rename {
 sub openr {
 	my ( $self, $file ) = @_;
 
+	my $t = $self->_resource_auto_txn;
+
 	my $src = $self->_locate_file_in_overlays($file);
 
 	open my $fh, "<", $src, or die "openr($file): $!";
+
+	$t->register($fh) if $t;
 
 	return $fh;
 }
 
 sub openw {
-	my ( $self, $file ) = @_;
+	my ( $self, $path ) = @_;
 
-	open my $fh, ">", $self->_work_path($file) or die "openw($file): $!";
+	my $t = $self->_resource_auto_txn;
+
+	my $txn = $self->_txn;
+
+	my $file = File::Spec->catfile( $txn->work, $path );
+
+	unless ( $txn->is_changed_in_head($path) ) {
+		my ( undef, $dir ) = File::Spec->splitpath($path);
+
+		$self->lock_path_write($path);
+
+		make_path( File::Spec->catdir($txn->work, $dir) ) if length($dir); # FIXME only if it exists in the original?
+	}
+
+	$txn->mark_changed($path);
+
+	open my $fh, ">", $file or die "openw($path): $!";
+
+	$t->register($fh) if $t;
 
 	return $fh;
 }
@@ -648,9 +761,13 @@ sub openw {
 sub opena {
 	my ( $self, $file ) = @_;
 
+	my $t = $self->_resource_auto_txn;
+
 	$self->vivify_path($file);
 
 	open my $fh, ">>", $self->_work_path($file) or die "opena($file): $!";
+
+	$t->register($fh) if $t;
 
 	return $fh;
 }
@@ -658,15 +775,21 @@ sub opena {
 sub open {
 	my ( $self, $mode, $file ) = @_;
 
+	my $t = $self->_resource_auto_txn;
+
 	$self->vivify_path($file);
 
 	open my $fh, $mode, $self->_work_path($file) or die "open($mode, $file): $!";
+
+	$t->register($fh) if $t;
 
 	return $fh;
 }
 
 sub _readdir_from_overlay {
 	my ( $self, $path ) = @_;
+
+	my $t = $self->_auto_txn;
 
 	my @dirs = $self->_locate_dirs_in_overlays($path);
 
@@ -717,6 +840,8 @@ sub readdir {
 sub list {
 	my ( $self, $path ) = @_;
 
+	my $t = $self->_auto_txn;
+
 	undef $path if $path eq "/" or !length($path);
 
 	my $files = $self->_readdir_from_overlay($path);
@@ -746,26 +871,45 @@ sub list {
 	return sort @ret;
 }
 
+sub _work_path {
+	my ( $self, $path ) = @_;
+
+	$self->lock_path_write($path);
+
+	my $txn = $self->_txn;
+
+	$txn->mark_changed($path);
+
+	my $file = File::Spec->catfile( $txn->work, $path );
+
+	my ( undef, $dir ) = File::Spec->splitpath($path);
+	make_path( File::Spec->catdir($txn->work, $dir ) ) if length($dir); # FIXME only if it exists in the original?
+
+	return $file;
+}
+
 sub vivify_path {
 	my ( $self, $path ) = @_;
 
-	my $txn_path = File::Spec->catfile( $self->_txn->work, $path );
+	my $txn = $self->_txn;
 
-	unless ( -e $txn_path ) {
-		my ( undef, $dir ) = File::Spec->splitpath($path);
-		make_path( File::Spec->catdir($self->_txn->work, $dir ) ) if $dir; # FIXME only if it exists in the original?
+	my $txn_path = File::Spec->catfile( $txn->work, $path );
+
+	unless ( $txn->is_changed_in_head($path) ) {
+		$self->lock_path_write($path);
 
 		my $src = $self->_locate_file_in_overlays($path);
 
 		if ( my $stat = File::stat::stat($src) ) {
-			if ( -l $src ) {
-				croak "The file $src is a symbolic link.";
-			}
-
 			if ( $stat->nlink > 1 ) {
 				croak "the file $src has a link count of more than one.";
 			}
 
+			if ( -l $src ) {
+				croak "The file $src is a symbolic link.";
+			}
+
+			$self->_work_path($path); # FIXME vivifies parent dir
 			copy( $src, $txn_path ) or die "copy($src, $txn_path): $!";
 		}
 	}
@@ -773,30 +917,23 @@ sub vivify_path {
 	return $txn_path;
 }
 
-sub _work_path {
-	my ( $self, $path ) = @_;
 
-	$self->lock_path_write($path);
-
-	$self->_txn->mark_changed($path);
-
-	my $file = File::Spec->catfile( $self->_txn->work, $path );
-
-	my ( undef, $dir ) = File::Spec->splitpath($path);
-	make_path( File::Spec->catdir($self->_txn->work, $dir ) ) if $dir; # FIXME only if it exists in the original?
-
-	return $file;
-}
 
 sub file_stream {
 	my ( $self, @args ) = @_;
 
+	my $t = $self->_resource_auto_txn;
+
 	require Directory::Transactional::Stream;
 
-	Directory::Transactional::Stream->new(
+	my $stream = Directory::Transactional::Stream->new(
 		manager => $self,
 		@args,
 	);
+
+	$t->register($stream) if $t;
+
+	return $stream;
 }
 
 __PACKAGE__->meta->make_immutable;
@@ -812,7 +949,7 @@ __END__
 
 =head1 VERSION
 
-version 0.02
+version 0.03
 Directory::Transactional - ACID transactions on a set of files with
 journalling/recovery using C<flock> or L<File::NFSLock>
 
@@ -879,6 +1016,16 @@ issues with locking, but try not to reuse paths and always reask for them to
 ensure that the right "real" path is returned even if the transaction stack has
 changed, or anything else.
 
+=item No forking
+
+If you fork in the middle of the transaction both the parent and the child have
+write locks, and both the parent and the child will try to commit or rollback
+when resources are being cleaned up.
+
+Either create the L<Directory::Transactional> instance within the child
+process, or use L<POSIX/_exit> and do not open or close any transactions in the
+child.
+
 =back
 
 =head1 ACID GUARANTEES
@@ -930,6 +1077,40 @@ restoring all the renamed backup files. Moving the backup directory into the
 work directory signifies that the transaction has comitted successfully, and
 recovery will clean these files up normally.
 
+=head1 LIMITATIONS
+
+=head2 Auto-Commit
+
+If you perform any operation outside of a transaction and C<auto_commit> is
+enabled a transaction will be created for you.
+
+For operations like C<rename> or C<readdir> which do not return resource the
+transaction is comitted immediately.
+
+Operations like C<open> or C<file_stream> on the other create a transaction
+that will be alive as long as the return value is alive.
+
+This means that you should not leak filehandles when relying on autocommit.
+
+Opening a new transaction when an automatic one is already opened is an error.
+
+Note that this resource tracking comes with an overhead, especially on Perl
+5.8, so even if you are only performing read operations it is reccomended that
+you operate within the scope of a real transaction.
+
+=head2 Open Filehandles
+
+One filehandle is required per every lock when using fine grained locking.
+
+For large transactions it is reccomended you set C<global_lock>, which is like
+taking an exclusive lock on the root directory.
+
+C<global_lock> also performs better, but causes long wait times if multiple
+processes are accessing the same database but not the same data. For web
+applications C<global_lock> should probably be off for better concurrency.
+
+=back
+
 =head1 ATTRIBUTES
 
 =over 4
@@ -972,6 +1153,14 @@ This is useful for avoiding deadlocks (there is no deadlock detection code in
 the fine grained locking).
 
 This flag is automatically set if C<nfs> is set.
+
+=item auto_commit
+
+If true (the default) any operation not performed within a transaction will
+cause a transaction to be automatically created and comitted.
+
+Transactions automatically created for operations which return things like
+filehandles will stay alive for as long as the returned resource does.
 
 =back
 

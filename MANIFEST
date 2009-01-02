@@ -5,6 +5,7 @@ META.yml
 Makefile.PL
 README
 lib/Directory/Transactional.pm
+lib/Directory/Transactional/AutoCommit.pm
 lib/Directory/Transactional/Stream.pm
 lib/Directory/Transactional/TXN.pm
 lib/Directory/Transactional/TXN/Nested.pm
@@ -14,10 +15,4 @@ t/02_txn.t
 t/03_recovery.t
 t/04_multi_proc.t
 t/05_file_iter.t
-t/tmp/FZYKsZFd__/6QNi7g5EiT/new_file.txt
-t/tmp/FZYKsZFd__/6QNi7g5EiT/oi_vey.txt
-t/tmp/FZYKsZFd__/SEUJaXK5mm/new_file.txt
-t/tmp/FZYKsZFd__/SEUJaXK5mm/oi_vey.txt
-t/tmp/lXQNTcrq69/oi_vey.txt
-t/tmp/tkiSsSK2uS/oi_vey.txt
-t/tmp/z3rbuzFpb4/oi_vey.txt
+t/06_auto_commit.t

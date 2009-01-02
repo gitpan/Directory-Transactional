@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::Stream;
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use Moose;
 
@@ -20,7 +20,7 @@ has manager => (
 has dir => (
 	isa => "Str",
 	is  => "ro",
-    default => "",	
+    default => "",
 );
 
 has depth_first => (
@@ -140,7 +140,7 @@ Directory::Transactional::Stream - Traverse files in L<Directory::Transactional>
 
 =head1 VERSION
 
-version 0.02
+version 0.03
 
 =head1 SYNOPSIS
 
