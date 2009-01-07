@@ -1,9 +1,11 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::AutoCommit;
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 use Moose;
+
+use Scope::Guard;
 
 use namespace::clean -except => 'meta';
 

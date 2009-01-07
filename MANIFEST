@@ -16,3 +16,4 @@ t/03_recovery.t
 t/04_multi_proc.t
 t/05_file_iter.t
 t/06_auto_commit.t
+t/07_crashing.t
