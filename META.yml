@@ -21,4 +21,4 @@ requires:
   Test::TempDir: 0
   Test::use::ok: 0
   namespace::clean: 0
-version: 0.04
+version: 0.05

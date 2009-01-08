@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::Stream;
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use Moose;
 
@@ -140,7 +140,7 @@ Directory::Transactional::Stream - Traverse files in L<Directory::Transactional>
 
 =head1 VERSION
 
-version 0.04
+version 0.05
 
 =head1 SYNOPSIS
 

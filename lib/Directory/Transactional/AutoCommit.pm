@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::AutoCommit;
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use Moose;
 

@@ -2,7 +2,7 @@
 # ABSTRACT: ACID transactions on a directory tree
 
 package Directory::Transactional;
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use Squirrel;
 
@@ -1127,7 +1127,7 @@ __END__
 
 =head1 VERSION
 
-version 0.04
+version 0.05
 Directory::Transactional - ACID transactions on a set of files with
 journalling/recovery using C<flock> or L<File::NFSLock>
 
@@ -1220,8 +1220,8 @@ ACID stands for atomicity, consistency, isolation and durability.
 
 Transactions are atomic (using locks), consistent (a recovery mode is able to
 restore the state of the directory if a process crashed while comitting a
-transaction), isolated (each transaction works in its own temporary directory,
-and durable (once C<txn_commit> returns a software crash will not call the
+transaction), isolated (each transaction works in its own temporary directory),
+and durable (once C<txn_commit> returns a software crash will not cause the
 transaction to rollback).
 
 =head1 TRANSACTIONAL PROTOCOL
