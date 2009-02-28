@@ -2,9 +2,11 @@
 # ABSTRACT: ACID transactions on a directory tree
 
 package Directory::Transactional;
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 use Squirrel;
+
+use Time::HiRes qw(alarm);
 
 use Set::Object;
 
@@ -72,6 +74,12 @@ has crash_detection => (
 	default => 1,
 );
 
+has timeout => (
+	isa => "Num",
+	is  => "ro",
+	predicate => "has_timeout",
+);
+
 sub _get_lock {
 	my ( $self, @args ) = @_;
 
@@ -94,6 +102,7 @@ sub _get_nfslock {
 	if ( my $lock = File::NFSLock->new({
 			file      => $file,
 			lock_type => $mode,
+			( $self->has_timeout ? ( blocking_timeout => $self->timeout ) : () ),
 		}) ) {
 		return $lock;
 	} elsif ( not($mode & LOCK_NB) ) {
@@ -117,14 +126,26 @@ sub _get_flock {
 	# open the lockfile, creating if necessary
 	open my $fh, "+>", $file or die $!;
 
-	if ( flock($fh, $mode) ) {
+	my $ret;
+
+	if ( not($mode & LOCK_NB) and $self->has_timeout ) {
+		local $SIG{ALRM} = sub { croak "Lock timed out" };
+		alarm($self->timeout);
+		$ret = flock($fh, $mode);
+		alarm(0);
+	} else {
+		$ret = flock($fh, $mode);
+	}
+
+	if ( $ret ) {
 		my $class = ($mode & LOCK_EX) ? "Directory::Transactional::Lock::Exclusive" : "Directory::Transactional::Lock::Shared";
 		return bless $fh, $class;
-	} elsif ( not $!{EWOULDBLOCK} ) {
+	} elsif ( $!{EWOULDBLOCK} or $!{EAGAIN} ) {
+		# LOCK_NB failed
+		return;
+	} else {
 		# die on any error except failing to obtain a nonblocking lock
 		die $!;
-	} else {
-		return;
 	}
 }
 
@@ -1127,7 +1148,7 @@ __END__
 
 =head1 VERSION
 
-version 0.05
+version 0.06
 Directory::Transactional - ACID transactions on a set of files with
 journalling/recovery using C<flock> or L<File::NFSLock>
 
@@ -1276,6 +1297,30 @@ If the commit is still running then it can be assumed that the process
 comitting it still has all of its exclusive locks so reading from the root
 directory is safe.
 
+=head1 DEADLOCKS
+
+This module does not implement deadlock detection. Unfortunately maintaing a
+lock table is a delicate and difficult task, so I doubt I will ever implement
+it.
+
+The good news is that certain operating systems (like HPUX) may implement
+deadlock detection in the kernel, and return C<EDEADLK> instead of just
+blocking forever.
+
+If you are not so lucky, specify a C<timeout> or make sure you always take
+locks in the same order.
+
+The C<global_lock> flag can also be used to prevent deadlocks entirely, at the
+cost of concurrency. This provides fully serializable level transaction
+isolation with no possibility of serialization failures due to deadlocks.
+
+There is no pessimistic locking mode (read-modify-write optimized) since all
+paths leading to a file are locked for reading. This mode, if implemented,
+would be semantically identical to C<global_lock> but far less efficient.
+
+In the future C<fcntl> based locking may be implemented in addition to
+C<flock>. C<EDEADLK> seems to be more widely supported when using C<fcntl>.
+
 =head1 LIMITATIONS
 
 =head2 Auto-Commit
@@ -1307,8 +1352,6 @@ taking an exclusive lock on the root directory.
 C<global_lock> also performs better, but causes long wait times if multiple
 processes are accessing the same database but not the same data. For web
 applications C<global_lock> should probably be off for better concurrency.
-
-=back
 
 =head1 ATTRIBUTES
 
@@ -1352,6 +1395,13 @@ This is useful for avoiding deadlocks (there is no deadlock detection code in
 the fine grained locking).
 
 This flag is automatically set if C<nfs> is set.
+
+=item timeout
+
+If set will be used to specify a time limit for blocking calls to lock.
+
+If you are experiencing deadlocks it is reccomended to set this or
+C<global_lock>.
 
 =item auto_commit
 

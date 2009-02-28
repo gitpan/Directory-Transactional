@@ -71,6 +71,8 @@ foreach my $forks ( 0 .. FORKS ) {
 
 			srand($$); # otherwise rand returns the same in all children
 
+			# delay instantiation of the directory to a random point in the
+			# recovery
 			select(undef,undef,undef,0.07 * rand);
 
 			{
@@ -154,7 +156,7 @@ foreach my $forks ( 0 .. FORKS ) {
 		wait;
 
 		SKIP: {
-			skip "bad exit from child", 9 if $?;
+			skip "bad exit from child", 10 if $?;
 
 			is( $s->read('foo.txt'),   "the foo",   "foo.txt restored" );
 			is( $s->read('bar.txt'),   "the bar",   "bar.txt not touched" );

@@ -20,5 +20,6 @@ requires:
   Test::Exception: 0
   Test::TempDir: 0
   Test::use::ok: 0
+  Time::HiRes: 0
   namespace::clean: 0
-version: 0.05
+version: 0.06

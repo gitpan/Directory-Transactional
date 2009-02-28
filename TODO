@@ -1,0 +1,14 @@
+add a lock table for deadlock detection
+	- simple hashing
+	- realistic concurrency limits should be covered using a constant number of actual locks
+		- middle ground between global lock and fine grained locks
+	- write metadata about locker into lock file
+	- finite set of locks to iterate through and work out deadlocks for
+		- look at BDB deadlock detection modes
+			- does it trigger on any block? after some fudge?
+	- actual lock table
+		- PerlIO :mmap?
+		- updated based on actual locks being granted
+			- seek to lock hash offset
+			- write PID
+			- could lock regions of this file using fcntl
