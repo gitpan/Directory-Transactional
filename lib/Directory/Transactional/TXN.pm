@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::TXN;
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
-use Squirrel;
+use Any::Moose;
 
 use Set::Object;
 use File::Spec;

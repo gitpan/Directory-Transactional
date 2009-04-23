@@ -2,9 +2,9 @@
 # ABSTRACT: ACID transactions on a directory tree
 
 package Directory::Transactional;
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
-use Squirrel;
+use Any::Moose;
 
 use Time::HiRes qw(alarm);
 
@@ -1148,7 +1148,7 @@ __END__
 
 =head1 VERSION
 
-version 0.06
+version 0.07
 Directory::Transactional - ACID transactions on a set of files with
 journalling/recovery using C<flock> or L<File::NFSLock>
 

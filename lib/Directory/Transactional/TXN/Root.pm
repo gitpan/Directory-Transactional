@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::TXN::Root;
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
-use Squirrel;
+use Any::Moose;
 
 use File::Spec;
 use File::Path qw(make_path remove_tree);

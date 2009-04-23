@@ -63,3 +63,16 @@ t/tmp/uehMCHa4Im/bar
 t/tmp/uehMCHa4Im/foo
 t/tmp/wHKZlWfYGH/flock/bar
 t/tmp/wHKZlWfYGH/flock/foo
+t/tmp/zLoiuZlfK8.lock.NFSLock
+t/tmp/zLoiuZlfK8/aSMPrtslLS/account_1.txt
+t/tmp/zLoiuZlfK8/aSMPrtslLS/account_2.txt
+t/tmp/zLoiuZlfK8/aSMPrtslLS/account_3.txt
+t/tmp/zLoiuZlfK8/aSMPrtslLS/bar.txt
+t/tmp/zLoiuZlfK8/aSMPrtslLS/baz.txt
+t/tmp/zLoiuZlfK8/aSMPrtslLS/bloo/blah/counter.txt
+t/tmp/zLoiuZlfK8/aSMPrtslLS/foo.txt
+t/tmp/zLoiuZlfK8/aSMPrtslLS/gorch.txt
+t/tmp/zLoiuZlfK8/aSMPrtslLS/work.lock
+t/tmp/zLoiuZlfK8/aSMPrtslLS/work/dirty
+t/tmp/zLoiuZlfK8/aSMPrtslLS/work/dirty.lock
+t/tmp/zLoiuZlfK8/aSMPrtslLS/work/txns/FDD25BC5-D9CB-4111-AE56-DD979F192317.cleanup/bloo/blah/counter.txt
