@@ -6,6 +6,7 @@ generated_by: Dist::Zilla::Plugin::MetaYaml version 1.003
 license: mit
 name: Directory-Transactional
 requires: 
+  Any::Moose: 0.07
   Data::Stream::Bulk: 0
   Data::UUID: 0
   Directory::Scratch: 0
@@ -13,7 +14,6 @@ requires:
   File::Path: 2.07
   Hash::Util::FieldHash::Compat: 0
   List::Util: 0
-  Mouse: 0.14
   Path::Class: 0
   Scope::Guard: 0
   Set::Object: 0
@@ -22,4 +22,4 @@ requires:
   Test::use::ok: 0
   Time::HiRes: 0
   namespace::clean: 0
-version: 0.07
+version: 0.08

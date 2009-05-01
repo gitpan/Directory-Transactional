@@ -2,7 +2,7 @@
 # ABSTRACT: ACID transactions on a directory tree
 
 package Directory::Transactional;
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 use Any::Moose;
 
@@ -1148,7 +1148,7 @@ __END__
 
 =head1 VERSION
 
-version 0.07
+version 0.08
 Directory::Transactional - ACID transactions on a set of files with
 journalling/recovery using C<flock> or L<File::NFSLock>
 
