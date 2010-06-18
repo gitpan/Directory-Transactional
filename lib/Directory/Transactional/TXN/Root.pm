@@ -1,9 +1,10 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::TXN::Root;
-our $VERSION = '0.08';
-
-use Any::Moose;
+BEGIN {
+  $Directory::Transactional::TXN::Root::VERSION = '0.09';
+}
+use Moose;
 
 use File::Spec;
 use File::Path qw(make_path remove_tree);

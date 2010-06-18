@@ -2,9 +2,10 @@
 # ABSTRACT: ACID transactions on a directory tree
 
 package Directory::Transactional;
-our $VERSION = '0.08';
-
-use Any::Moose;
+BEGIN {
+  $Directory::Transactional::VERSION = '0.09';
+}
+use Moose;
 
 use Time::HiRes qw(alarm);
 
@@ -22,6 +23,8 @@ use IO::Dir;
 use Directory::Transactional::TXN::Root;
 use Directory::Transactional::TXN::Nested;
 #use Directory::Transactional::Stream; # we require it later, it wants real Moose
+
+use Try::Tiny;
 
 use namespace::clean -except => 'meta';
 
@@ -152,6 +155,9 @@ sub _get_flock {
 # support methods for fine grained locking
 {
 	package Directory::Transactional::Lock;
+BEGIN {
+  $Directory::Transactional::Lock::VERSION = '0.09';
+}
 
 	sub unlock { close $_[0] }
 	sub is_exclusive { 0 }
@@ -161,6 +167,9 @@ sub _get_flock {
 	sub downgrade { }
 
 	package Directory::Transactional::Lock::Exclusive;
+BEGIN {
+  $Directory::Transactional::Lock::Exclusive::VERSION = '0.09';
+}
 	use Fcntl qw(LOCK_SH);
 
 	BEGIN { our @ISA = qw(Directory::Transactional::Lock) }
@@ -174,6 +183,9 @@ sub _get_flock {
 	}
 
 	package Directory::Transactional::Lock::Shared;
+BEGIN {
+  $Directory::Transactional::Lock::Shared::VERSION = '0.09';
+}
 	use Fcntl qw(LOCK_EX LOCK_NB);
 
 	BEGIN { our @ISA = qw(Directory::Transactional::Lock) }
@@ -267,7 +279,7 @@ sub DEMOLISH {
 	# condition in their directory creation code
 	if ( my $ex_lock = $self->_get_lock( $self->_shared_lock_file, LOCK_EX|LOCK_NB ) ) {
 		# we don't really care if there's an error
-		remove_tree($self->_locks);
+		try { local $SIG{__WARN__} = sub { }; remove_tree($self->_locks) };
 		rmdir $self->_work;
 		rmdir $self->_txns;
 		rmdir $self->_backups;
@@ -920,7 +932,7 @@ sub openr {
 
 	my $src = $self->_locate_file_in_overlays($file);
 
-	open my $fh, "<", $src, or die "openr($file): $!";
+	open my $fh, "<", $src or die "openr($file): $!";
 
 	$t->register($fh) if $t;
 
@@ -1148,7 +1160,7 @@ __END__
 
 =head1 VERSION
 
-version 0.08
+version 0.09
 Directory::Transactional - ACID transactions on a set of files with
 journalling/recovery using C<flock> or L<File::NFSLock>
 

@@ -1,9 +1,10 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::TXN::Nested;
-our $VERSION = '0.08';
-
-use Any::Moose;
+BEGIN {
+  $Directory::Transactional::TXN::Nested::VERSION = '0.09';
+}
+use Moose;
 
 use namespace::clean -except => 'meta';
 

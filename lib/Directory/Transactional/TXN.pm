@@ -1,13 +1,16 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::TXN;
-our $VERSION = '0.08';
-
-use Any::Moose;
+BEGIN {
+  $Directory::Transactional::TXN::VERSION = '0.09';
+}
+use Moose;
 
 use Set::Object;
 use File::Spec;
 use File::Path qw(make_path remove_tree);
+
+use Data::GUID;
 
 use namespace::clean -except => 'meta';
 
@@ -24,16 +27,7 @@ has id => (
 	lazy_build => 1,
 );
 
-BEGIN {
-	local $@;
-	if ( eval { require Data::UUID::LibUUID } ) {
-		Data::UUID::LibUUID->import( new_dce_uuid_string => { -as => "_build_id" } );
-	} else {
-		require Data::UUID;
-		my $u = Data::UUID->new;
-		*_build_id = sub { $u->create_str };
-	}
-}
+sub _build_id { Data::GUID->new->as_string };
 
 has work => (
 	isa => "Str",

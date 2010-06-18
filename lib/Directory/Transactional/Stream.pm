@@ -1,8 +1,9 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::Stream;
-our $VERSION = '0.08';
-
+BEGIN {
+  $Directory::Transactional::Stream::VERSION = '0.09';
+}
 use Moose;
 
 use Carp qw(croak);
@@ -140,7 +141,7 @@ Directory::Transactional::Stream - Traverse files in L<Directory::Transactional>
 
 =head1 VERSION
 
-version 0.08
+version 0.09
 
 =head1 SYNOPSIS
 

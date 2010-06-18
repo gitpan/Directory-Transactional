@@ -1,8 +1,9 @@
 #!/usr/bin/perl
 
 package Directory::Transactional::AutoCommit;
-our $VERSION = '0.08';
-
+BEGIN {
+  $Directory::Transactional::AutoCommit::VERSION = '0.09';
+}
 use Moose;
 
 use Scope::Guard;
